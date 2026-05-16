@@ -1,14 +1,10 @@
-import { startThreeScene } from "./scenes/threeScene";
-import { startPixiScene } from "./scenes/pixiScene";
+import { Game } from './engine/Game';
 
-type Engine = "three" | "pixi";
+const mount = document.getElementById('app') as HTMLElement;
+const hudMount = document.getElementById('hud') as HTMLElement;
 
-const params = new URLSearchParams(window.location.search);
-const engine = (params.get("engine") as Engine) ?? "three";
-const mount = document.getElementById("app") as HTMLElement;
+const game = new Game(mount, hudMount);
+game.start();
 
-if (engine === "pixi") {
-  await startPixiScene(mount);
-} else {
-  startThreeScene(mount);
-}
+// expose for dev console poking
+(window as unknown as { __game?: Game }).__game = game;
