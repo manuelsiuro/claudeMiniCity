@@ -1,126 +1,133 @@
-// Ambient voxel birds drifting on lazy circular paths above the map.
-// 10 birds, one InstancedMesh, per-frame matrix update.
+// Ambient voxel birds drifting on smooth closed curves above the map.
+// Each bird is a small Group with a body + two wings; wings rotate
+// around their inner edge to fake a flap.
 
 import * as THREE from 'three';
 import { GRID_SIZE, TILE_SIZE } from '../config/constants';
 
-const COUNT = 10;
+const COUNT = 12;
 
 type Bird = {
-  cx: number; cz: number;       // orbit centre
-  radius: number;
-  altitude: number;
-  speed: number;                // radians/sec
-  phase: number;                // start angle
+  group: THREE.Group;
+  leftWing: THREE.Mesh;
+  rightWing: THREE.Mesh;
+  curve: THREE.CatmullRomCurve3;
+  u: number;          // current position along curve, [0,1]
+  speed: number;      // u-units / sec
+  bobPhase: number;
   flapPhase: number;
+  flapSpeed: number;
 };
+
+const SHARED = (() => {
+  // pivot translations so each wing rotates around its inner edge (the body).
+  const wingW = 0.36, wingH = 0.03, wingD = 0.10;
+  const left = new THREE.BoxGeometry(wingW, wingH, wingD);
+  left.translate(-wingW / 2, 0, 0);
+  const right = new THREE.BoxGeometry(wingW, wingH, wingD);
+  right.translate(wingW / 2, 0, 0);
+  const body = new THREE.BoxGeometry(0.12, 0.08, 0.18);
+
+  const bodyMat = new THREE.MeshLambertMaterial({ color: 0x3a2a1c, flatShading: true });
+  const wingMat = new THREE.MeshLambertMaterial({ color: 0xf2eee4, flatShading: true });
+
+  return { left, right, body, bodyMat, wingMat };
+})();
 
 export class Birds {
   readonly group = new THREE.Group();
-  private mesh: THREE.InstancedMesh;
   private birds: Bird[] = [];
-  private scratchM = new THREE.Matrix4();
-  private scratchP = new THREE.Vector3();
-  private scratchQ = new THREE.Quaternion();
-  private scratchE = new THREE.Euler();
-  private scratchS = new THREE.Vector3();
   private time = 0;
 
   constructor() {
     this.group.name = 'birds';
-    const geo = buildBirdGeom();
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-    this.mesh = new THREE.InstancedMesh(geo, mat, COUNT);
-    this.mesh.count = COUNT;
-    this.mesh.frustumCulled = false;
-    this.group.add(this.mesh);
 
     for (let i = 0; i < COUNT; i++) {
-      const cx = GRID_SIZE * (0.25 + Math.random() * 0.5);
-      const cz = GRID_SIZE * (0.25 + Math.random() * 0.5);
+      const g = new THREE.Group();
+
+      const body = new THREE.Mesh(SHARED.body, SHARED.bodyMat);
+      body.castShadow = false;
+      g.add(body);
+
+      const leftWing = new THREE.Mesh(SHARED.left, SHARED.wingMat);
+      leftWing.position.set(-0.06, 0.02, 0);
+      leftWing.castShadow = false;
+      g.add(leftWing);
+
+      const rightWing = new THREE.Mesh(SHARED.right, SHARED.wingMat);
+      rightWing.position.set(0.06, 0.02, 0);
+      rightWing.castShadow = false;
+      g.add(rightWing);
+
+      this.group.add(g);
       this.birds.push({
-        cx, cz,
-        radius: 3 + Math.random() * 6,
-        altitude: 5 + Math.random() * 4,
-        speed: (0.18 + Math.random() * 0.3) * (Math.random() < 0.5 ? 1 : -1),
-        phase: Math.random() * Math.PI * 2,
+        group: g,
+        leftWing,
+        rightWing,
+        curve: makeRandomCurve(),
+        u: Math.random(),
+        speed: 0.025 + Math.random() * 0.025,
+        bobPhase: Math.random() * Math.PI * 2,
         flapPhase: Math.random() * Math.PI * 2,
+        flapSpeed: 7 + Math.random() * 4,
       });
     }
   }
 
   update(dt: number): void {
     this.time += dt;
+    const pos = new THREE.Vector3();
+    const tan = new THREE.Vector3();
     for (let i = 0; i < this.birds.length; i++) {
       const b = this.birds[i];
-      const angle = b.phase + this.time * b.speed;
-      const x = b.cx + Math.cos(angle) * b.radius;
-      const z = b.cz + Math.sin(angle) * b.radius;
-      const y = b.altitude + Math.sin(this.time * 0.5 + b.phase) * 0.4;
-      this.scratchP.set(x * TILE_SIZE, y, z * TILE_SIZE);
-      // Face direction of travel.
-      const yaw = angle + (b.speed > 0 ? Math.PI / 2 : -Math.PI / 2);
-      this.scratchE.set(0, yaw, 0);
-      this.scratchQ.setFromEuler(this.scratchE);
-      // Wing flap via subtle Y-scale oscillation on the whole mesh.
-      const flap = 1 + Math.sin(this.time * 8 + b.flapPhase) * 0.18;
-      this.scratchS.set(1, flap, 1);
-      this.scratchM.compose(this.scratchP, this.scratchQ, this.scratchS);
-      this.mesh.setMatrixAt(i, this.scratchM);
+      b.u = (b.u + b.speed * dt) % 1;
+      b.curve.getPointAt(b.u, pos);
+      b.curve.getTangentAt(b.u, tan);
+
+      // Gentle vertical bob on top of the curve's own altitude.
+      pos.y += Math.sin(this.time * 1.2 + b.bobPhase) * 0.18;
+
+      b.group.position.copy(pos);
+      b.group.rotation.y = Math.atan2(tan.x, tan.z);
+
+      // Flap: symmetric rotation around local Z, ±0.5 rad.
+      const flap = Math.sin(this.time * b.flapSpeed + b.flapPhase) * 0.5;
+      b.leftWing.rotation.z =  flap;
+      b.rightWing.rotation.z = -flap;
     }
-    this.mesh.instanceMatrix.needsUpdate = true;
   }
 
   dispose(): void {
-    (this.mesh.geometry as THREE.BufferGeometry).dispose();
-    (this.mesh.material as THREE.Material).dispose();
+    // Shared geometries/materials are module-level singletons; only
+    // dispose them when the last Birds instance goes away. In practice
+    // this app keeps one Birds instance for the lifetime of the game.
+    SHARED.body.dispose();
+    SHARED.left.dispose();
+    SHARED.right.dispose();
+    SHARED.bodyMat.dispose();
+    SHARED.wingMat.dispose();
   }
 }
 
-function buildBirdGeom(): THREE.BufferGeometry {
-  // Two wings spread along X, tiny body in the middle.
-  const wing = new THREE.BoxGeometry(0.36, 0.03, 0.10);
-  const body = new THREE.BoxGeometry(0.10, 0.06, 0.10);
-  const fill = (g: THREE.BufferGeometry, color: number) => {
-    const n = g.attributes.position.count;
-    const arr = new Float32Array(n * 3);
-    const c = new THREE.Color(color);
-    for (let i = 0; i < n; i++) {
-      arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b;
-    }
-    g.setAttribute('color', new THREE.Float32BufferAttribute(arr, 3));
-  };
-  fill(wing, 0x202020);
-  fill(body, 0x3a2a1c);
-
-  return mergeTwo(wing, body);
-}
-
-function mergeTwo(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {
-  const pa = a.attributes.position as THREE.BufferAttribute;
-  const na = a.attributes.normal as THREE.BufferAttribute;
-  const ca = a.attributes.color as THREE.BufferAttribute;
-  const pb = b.attributes.position as THREE.BufferAttribute;
-  const nb = b.attributes.normal as THREE.BufferAttribute;
-  const cb = b.attributes.color as THREE.BufferAttribute;
-  const ia = a.index!;
-  const ib = b.index!;
-  const positions = new Float32Array(pa.count * 3 + pb.count * 3);
-  positions.set(pa.array as Float32Array, 0);
-  positions.set(pb.array as Float32Array, pa.count * 3);
-  const normals = new Float32Array(na.count * 3 + nb.count * 3);
-  normals.set(na.array as Float32Array, 0);
-  normals.set(nb.array as Float32Array, na.count * 3);
-  const colors = new Float32Array(ca.count * 3 + cb.count * 3);
-  colors.set(ca.array as Float32Array, 0);
-  colors.set(cb.array as Float32Array, ca.count * 3);
-  const index = new Uint32Array(ia.count + ib.count);
-  for (let i = 0; i < ia.count; i++) index[i] = ia.getX(i);
-  for (let i = 0; i < ib.count; i++) index[ia.count + i] = ib.getX(i) + pa.count;
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  out.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-  out.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  out.setIndex(new THREE.BufferAttribute(index, 1));
-  return out;
+function makeRandomCurve(): THREE.CatmullRomCurve3 {
+  // 4–6 control points sampled around the island perimeter at altitude 7–11.
+  const n = 4 + Math.floor(Math.random() * 3);
+  const cx = (GRID_SIZE / 2) * TILE_SIZE;
+  const cz = (GRID_SIZE / 2) * TILE_SIZE;
+  const radius = GRID_SIZE * 0.45 + Math.random() * GRID_SIZE * 0.15;
+  const altBase = 7 + Math.random() * 3;
+  const startAng = Math.random() * Math.PI * 2;
+  const dir = Math.random() < 0.5 ? 1 : -1;
+  const pts: THREE.Vector3[] = [];
+  for (let i = 0; i < n; i++) {
+    const ang = startAng + dir * (i / n) * Math.PI * 2;
+    const jitter = 0.7 + Math.random() * 0.6;
+    const r = radius * jitter;
+    pts.push(new THREE.Vector3(
+      cx + Math.cos(ang) * r,
+      altBase + Math.sin(ang * 2) * 1.2,
+      cz + Math.sin(ang) * r,
+    ));
+  }
+  return new THREE.CatmullRomCurve3(pts, true, 'catmullrom', 0.5);
 }

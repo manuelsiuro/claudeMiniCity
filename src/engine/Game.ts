@@ -31,6 +31,7 @@ import { Flags } from '../world/Flags';
 import { DisasterVfx } from '../world/DisasterVfx';
 import { Confetti } from '../world/Confetti';
 import { Birds } from '../world/Birds';
+import { Wind } from '../world/Wind';
 import { footprintTilesAt, footprintHeight } from '../world/Grid';
 
 import { HUDRoot } from '../ui/HUDRoot';
@@ -64,6 +65,8 @@ export class Game {
   private disasterVfx!: DisasterVfx;
   private confetti!: Confetti;
   private birds!: Birds;
+  private wind!: Wind;
+  private elapsed = 0;
   private lastTier = 0;
   private wonFireworks: { time: number; remaining: number } | null = null;
   private lastEnded: 'won' | null = null;
@@ -96,7 +99,10 @@ export class Game {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.shadowMap.enabled = false;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     mount.appendChild(this.renderer.domElement);
 
     // --- Scene ---
@@ -160,6 +166,10 @@ export class Game {
     // --- Birds ---
     this.birds = new Birds();
     this.scene.scene.add(this.birds.group);
+
+    // --- Wind streaks ---
+    this.wind = new Wind();
+    this.scene.scene.add(this.wind.group);
 
 // Rebuild instances for loaded buildings
     for (const b of this.store.state.buildings.values()) {
@@ -366,6 +376,8 @@ export class Game {
     this.disasterVfx.update(dt, s);
     this.confetti.update(dt);
     this.birds.update(dt);
+    this.elapsed += dt;
+    this.wind.update(dt, this.elapsed);
 
     // Wonder-completion fireworks: multi-burst over the Wonder.
     if (s.ended === 'won' && this.lastEnded !== 'won') {

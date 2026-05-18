@@ -14,14 +14,28 @@ export class SceneRoot {
   private stars?: THREE.Points;
 
   constructor() {
-    this.scene.background = new THREE.Color(0x86b8e0);
-    this.scene.fog = new THREE.Fog(0x86b8e0, 80, 220);
+    this.scene.background = new THREE.Color(0x8FBAC2);
+    this.scene.fog = new THREE.FogExp2(0x8FBAC2, 0.012);
 
     this.ambient = new THREE.AmbientLight(0xa8c7ff, 0.55);
     this.hemi = new THREE.HemisphereLight(0xbcd2ff, 0x44391c, 0.6);
-    this.sun = new THREE.DirectionalLight(0xfff4d6, 1.05);
+    this.sun = new THREE.DirectionalLight(0xffddb1, 1.8);
     this.sun.position.set(GRID_SIZE * 1.0, 50, GRID_SIZE * 0.5);
     this.sun.target.position.set(GRID_SIZE / 2, 0, GRID_SIZE / 2);
+
+    // Shadows — soft PCF, ortho frustum sized to the grid.
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(2048, 2048);
+    const o = GRID_SIZE; // 24
+    this.sun.shadow.camera.left   = -o;
+    this.sun.shadow.camera.right  =  o;
+    this.sun.shadow.camera.top    =  o;
+    this.sun.shadow.camera.bottom = -o;
+    this.sun.shadow.camera.near   = 1;
+    this.sun.shadow.camera.far    = 200;
+    this.sun.shadow.bias          = -0.0003;
+    this.sun.shadow.normalBias    =  0.02;
+
     this.scene.add(this.ambient, this.hemi, this.sun, this.sun.target);
 
     // selection cursor (a thin glowing square plane)
@@ -94,11 +108,11 @@ export class SceneRoot {
   setDaylight(t: number, weather: 'clear' | 'rain' | 'storm'): void {
     // t in [0,1]: 0/1 = midnight, 0.5 = noon
     const noon = 1 - Math.abs(t - 0.5) * 2; // 1 at noon, 0 at midnight
-    const warm = new THREE.Color(0xfff4d6);
+    const warm = new THREE.Color(0xffddb1);
     const cool = new THREE.Color(0x2a3654);
     const tint = warm.clone().lerp(cool, 1 - noon);
     this.sun.color.copy(tint);
-    this.sun.intensity = 0.4 + noon * 0.8;
+    this.sun.intensity = 0.6 + noon * 1.4;
     this.ambient.intensity = 0.2 + noon * 0.3;
 
     // Move sun + moon across the sky.  Daytime = t in [0,1], sun angle =
@@ -130,6 +144,10 @@ export class SceneRoot {
     else if (t < 0.3 || t > 0.7) bg = 0x2a3654;     // dusk/dawn
     else bg = 0x86b8e0;                              // day
     (this.scene.background as THREE.Color).set(bg);
-    if (this.scene.fog) (this.scene.fog as THREE.Fog).color.set(bg);
+    if (this.scene.fog) {
+      const fog = this.scene.fog as THREE.FogExp2;
+      fog.color.set(bg);
+      fog.density = weather === 'storm' ? 0.018 : weather === 'rain' ? 0.014 : 0.012;
+    }
   }
 }

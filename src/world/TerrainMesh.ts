@@ -142,7 +142,7 @@ export function buildTerrainMeshes(tiles: Tile[]): TerrainMeshes {
   });
   const ground = new THREE.Mesh(geo, groundMat);
   ground.name = 'terrain';
-  ground.receiveShadow = false;
+  ground.receiveShadow = true;
 
   // Decorative trees on forest tiles, as instanced meshes (cheap).
   // Three voxel variants — oak, pine, bush — with per-instance scale + yaw.
@@ -184,6 +184,8 @@ export function buildTerrainMeshes(tiles: Tile[]): TerrainMeshes {
       if (!tiles.length) return;
       const mesh = new THREE.InstancedMesh(geom, treeMat, tiles.length);
       mesh.frustumCulled = false;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
       let i = 0;
       for (const f of tiles) {
         const jx = (hash01(f.x, f.y, variantSalt * 11 + 1) - 0.5) * 0.36;

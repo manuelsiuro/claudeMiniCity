@@ -76,6 +76,8 @@ class BuildingPool {
     this.mesh.name = `bld:${type}`;
     this.mesh.count = 0;
     this.mesh.frustumCulled = false; // small world, simpler
+    this.mesh.castShadow = true;
+    this.mesh.receiveShadow = true;
   }
 
   add(id: number, x: number, y: number, footprint: number, baseY: number): void {

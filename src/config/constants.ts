@@ -12,7 +12,7 @@ export const DEFAULT_SEED = 1729;
 export const CAMERA_ZOOM_MIN = 5;
 export const CAMERA_ZOOM_MAX = 22;
 export const CAMERA_ZOOM_DEFAULT = 9;
-export const CAMERA_PITCH = Math.PI / 4; // 45° iso (asked by user)
+export const CAMERA_PITCH = Math.PI / 6; // 30° — lower, drysland-like over-the-shoulder iso
 
 export const COLOR = {
   grass: 0x4a9b3a,
